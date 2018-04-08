@@ -1,0 +1,114 @@
+import numpy as np
+
+
+def loadDataSet(fileName):
+    dataMat = []
+    fr = open(fileName)
+    for line in fr.readlines():
+        cueLine = line.strip().split('\t')
+        fltLine = list(map(float,cueLine))
+        dataMat.append(fltLine)
+    return dataMat
+
+
+def distEclud(vecA, vecB):
+    return np.sqrt(np.sum(np.power(vecA - vecB, 2)))         #计算向量到质心的欧式距离
+
+
+def randCent(dataSet, k):
+    n = np.shape(dataSet)[1]                                 #有几个特征
+    centroids = np.mat(np.zeros((k,n)))                      #创建质心矩阵
+    for j in range(n):
+        minJ = min(dataSet[:,j])
+        rangeJ = float(max(dataSet[:,j] - minJ))
+        centroids[:,j] = np.mat(minJ + rangeJ * np.random.rand(k,1)) #保证随机质心在数据边界中
+    return centroids
+
+
+
+def kMeans(dataSet, k, distMeas=distEclud, createCent=randCent):
+    """
+
+    :param dataSet:待聚类的数据集
+    :param k:用户决定划分成几簇
+    :param distMeas:距离平方和函数
+    :param createCent:随机质心函数
+    :return:
+            centroids-质心矩阵
+            clusterAssment-簇的索引和误差矩阵
+
+    """
+
+    m = np.shape(dataSet)[0]
+    clusterAssment = np.mat(np.zeros((m,2)))                #第一列记录哪个点属于哪一类,第二列记录该点和该簇的质心的误差
+    centroids = createCent(dataSet,k)
+    clusterChanged = True
+    while clusterChanged:
+        clusterChanged = False
+        for i in range(m):                                  #对于每个点
+            minDist = np.inf; minIndex = -1
+            for j in range(k):                              #对每个质心
+                distJI = distMeas(centroids[j,:],dataSet[i,:])
+                if distJI < minDist:
+                    minDist = distJI; minIndex = j
+            if clusterAssment[i,0] != minIndex: clusterChanged = True
+            clusterAssment[i,:] = minIndex,minDist**2        #此处判断数据点所属类别与之前是否相同（是否变化，
+            # 只要有一个点变化就重设为True，再次迭代）
+        #print(centroids)
+        #更新 k center
+        for cent in range(k):
+            ptsInClust = dataSet[np.nonzero(clusterAssment[:,0].A == cent)[0]]      #.A是把matrix变成array,ptsInClust
+            # 存储每个簇的所有点,dataSet里面的代码是找到当前簇(cent)里面所有点的行下标
+            #取出dataSet里面下标和类相同的点
+            centroids[cent,:] = np.mean(ptsInClust, axis=0)                  #axis=0,按列进行
+
+    return centroids, clusterAssment
+
+
+def biKmeans(dataSet, k , distMeas = distEclud):
+    """
+
+    :param dataSet: 待聚类的数据集
+    :param k: 想要聚成几类
+    :param distMeas: 簇的误差平方和计算
+    :return:
+            centList-质心列表
+            clusterAssment:第一列是表示哪个点属于哪一类,第二列是这个点与该簇质心的欧氏距离平方
+
+    """
+    m = np.shape(dataSet)[0]
+    clusterAssment = np.mat(np.zeros((m,2)))                    #第一列记录哪一个点属于哪一簇,第二列记录该点和这个簇的质心的误差
+    centroid0 = np.mean(dataSet,axis=0).tolist()[0]             #计算出整个数据集的质心 一维list
+    centList = [centroid0]                                      #二维list,记录质心的列表
+    for j in range(m):                                          #对于每个点计算误差
+        clusterAssment[j, 1] = distMeas(np.mat(centroid0), dataSet[j, :]) ** 2   #储存每个点的平方误差[j,1]-第二列储存误差
+        #第j行第2列那个点的误差
+
+    while (len(centList) < k):                                  #当簇的数目小于k时
+        lowestSSE = np.inf                                      #初始化最小误差无穷大
+
+        for i in range(len(centList)):                          #对于每一簇,centlist的长度就是质心的个数,即簇的个数
+            ptsInCurrCluster = dataSet[np.nonzero(clusterAssment[:,0].A == i)[0],:]   #把属于第i簇的所有点ptsInCurrCluster
+            centroidMat, splitClustAss = kMeans(ptsInCurrCluster, 2, distMeas)    #将第i簇的所有点当成一个数据集,一分为二
+            #形成新的簇
+            sseSplit = np.sum(splitClustAss[:,1])               #算出划分后每个簇的误差平方和
+            sseNotSplit = np.sum(clusterAssment[np.nonzero(clusterAssment[:,0].A !=i)[0],1])  #算出不是第i簇的数据集的误差和
+            print('sseSplit,sseNotSplit:',sseSplit,sseNotSplit)
+            #划分后的误差和+不是第i簇的数据集的误差和=本次划分的误差
+            if (sseSplit + sseNotSplit) < lowestSSE:            #当本次划分误差小于最小误差，则本次划分被保存
+                bestCentToSplit = i                             #保存当前簇
+                bestNewCents = centroidMat                      #保存当前最佳质心
+                bestClustAss = splitClustAss.copy()             #保存当前点的分配结果
+                lowestSSE = sseSplit + sseNotSplit              #更新误差
+        bestClustAss[np.nonzero(bestClustAss[:,0].A == 1)[0],0] = len(centList)   #得出当前划分了几簇
+        bestClustAss[np.nonzero(bestClustAss[:,0].A == 0)[0],0] = bestCentToSplit  #存储当前是第几类
+
+        print('the bestCentToSplit is:',bestCentToSplit)
+        print('the len of bestClustAss is:',len(bestClustAss))
+
+        centList[bestCentToSplit] = bestNewCents[0,:].tolist()[0]
+        centList.append(bestNewCents[1,:].tolist()[0])
+        clusterAssment[np.nonzero(clusterAssment[:,0].A == bestCentToSplit)[0],:]=bestClustAss
+
+    return np.mat(centList),clusterAssment                      #centlist是质心列表,clusterAssment是哪个点属于哪一类和误差
+
