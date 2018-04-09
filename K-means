@@ -112,3 +112,47 @@ def biKmeans(dataSet, k , distMeas = distEclud):
 
     return np.mat(centList),clusterAssment                      #centlist是质心列表,clusterAssment是哪个点属于哪一类和误差
 
+def distSLC(vecA, vecB):
+    """
+    计算地球上两点的距离(单位英里)
+    :param vecA: 数据点A
+    :param vecB: 数据点B
+    :return:
+            两点的距离
+    """
+    a = np.sin(vecA[0,1]*np.pi/180) * np.sin(vecB[0,1]*np.pi/180)       #角度除以180*pi转换为弧度
+    b = np.cos(vecA[0,1]*np.pi/180) * np.cos(vecB[0,1]*np.pi/180) *\
+        np.cos(np.pi * (vecB[0,0]-vecA[0,0]) / 180)
+    return np.arccos(a + b)*6371.0
+
+def clusterClubs(numClust=5):
+    """
+    聚类函数
+    :param numClust: 希望得到的簇的数目
+    :return:
+    """
+    datList = []
+    for line in open(r"F:\ML in action-dataSet\ML-in-Action-Code-and-Note-master\ch10\places.txt").readlines():
+        lineArr = line.split(('\t'))
+        datList.append([float(lineArr[4]),float(lineArr[3])])         #第四列第五列对应纬度和经度
+    datMat = np.mat(datList)                                          #基于经纬度创建一个矩阵
+    myCentroids, clusterAssing = biKmeans(datMat, numClust, distMeas=distSLC)   #得到质心和簇分配结果
+    #画图
+    fig = plt.figure()
+    rect = [0.1,0.1,0.8,0.8]                                          #创建一个矩形
+    scatterMarkers = ['s','o','^','8','p','d','v','h','>','<']        #标记形状列表
+    axprops = dict(xticks=[],yticks=[])                               #创建一个字典装x与y的记号
+    ax0 = fig.add_axes(rect, label='ax0',**axprops)
+    imgP = plt.imread(r"F:\ML in action-dataSet\ML-in-Action-Code-and-Note-master\ch10\Portland.png")
+    #imread基于一张图创建矩阵
+    ax0.imshow(imgP)                                                  #绘制该矩阵
+    ax1 = fig.add_axes(rect,label= 'ax1',frameon= False)              #在同一张图上绘制一张新的图,允许使用两套坐标系统还不用做\
+    #任何的缩放
+    for i in range(numClust):                                         #遍历每一簇,把它们画出来
+        ptsInCurrCluster = datMat[np.nonzero(clusterAssing[:,0].A ==i)[0],:]
+        markerStyle = scatterMarkers[i % len(scatterMarkers)]         #用来选择标记形状，可循环使用
+        ax1.scatter(ptsInCurrCluster[:,0].flatten().A[0],ptsInCurrCluster[:,1].flatten().A[0],\
+                        marker=markerStyle, s =90)
+    ax1.scatter(myCentroids[:,0].flatten().A[0],myCentroids[:,1].flatten().A[0],marker='+', s=300)  #用+来标记质心
+    #flatten是将该函数返回一个折叠成 一维 的数组。
+    plt.show()
