@@ -1,0 +1,185 @@
+#创建FP树的数据结构
+class treeNode:
+    def __init__(self, nameValue, numOccur, parentNode):
+        self.name = nameValue                      #节点元素名称，在构造时初始化为给定值
+        self.count = numOccur                      #出现次数，在构造时初始化为给定值
+        self.nodeLink = None                       #nodeLink 变量用于链接相似的元素项,即指向下一个相似节点的指针，默认为None
+        self.parent = parentNode                   #指向当前节点的父节点
+        self.children = {}                         #指向子节点的字典,以子节点的元素名称为键,指向子节点的指针为值,初始化为空字典
+
+    #给count变量增加给定值
+    def inc(self,numOccur):
+        self.count += numOccur
+
+    #将树以文本形式显示
+    def disp(self,ind=1):
+        print('  '*ind, self.name, ' ', self.count)              #*ind是前面有几个空格
+        for child in self.children.values():
+            child.disp(ind+1)
+
+
+def loadSimpDat():
+    simpDat = [['r', 'z', 'h', 'j', 'p'],
+               ['z', 'y', 'x', 'w', 'v', 'u', 't', 's'],
+               ['z'],
+               ['r' ,'x', 'n', 'o', 's'],
+               ['y', 'r', 'x', 'z', 'q', 't', 'p'],
+               ['y', 'z', 'x', 'e', 'q', 's', 't', 'm']]
+    return simpDat
+
+
+def createInitSet(dataSet):
+    retDict = {}                         #键为项集,频率为键的值
+    for trans in dataSet:
+        retDict[frozenset(trans)] = 1
+    return retDict
+
+
+
+def createTree(dataSet, minSup=1):
+    """
+
+    :param dataSet: 数据集
+    :param minSup: 最小支持度
+    :return:
+            retTree-数列表
+            header Table-头指针表
+
+    """
+    headerTable = {}                                   #记录每个元素项出现的次数
+    for trans in dataSet:                              #第一次遍历,统计各个数据的支持度
+        #trans长这样frozenset({'h', 'j', 'p', 'r', 'z'}): 1
+        for item in trans:                             #item为trans中括号里面的每个值如h,j...
+            headerTable[item] = headerTable.get(item, 0) + dataSet[trans]   #获取item,不存在值就为0
+            # 用头指针表统计各个类别的出现的次数,计算支持度:头指针表[类别]=出现次数
+    for k in list(headerTable):                       #删除未达到最小支持度的
+        if headerTable[k] < minSup:
+            del (headerTable[k])
+    freqItemSet = set(headerTable.keys())               #保存达到要求的数据
+    #print('freqItemSet: ', freqItemSet)
+    if len(freqItemSet) == 0:
+        return None, None                              #若达到要求的数目为0,则退出
+    for k in headerTable:
+        headerTable[k] = [headerTable[k], None]        #保存计数值和指向每种类型第一个元素项的指针,指针初始为None
+    #print('headerTable: ', headerTable)
+    retTree = treeNode('Null set', 1, None)        #初始化根节点treeNode
+    for transSet, count in dataSet.items():         #第二次遍历,transSet{'h','j'}类似的整体为键名,count为这个整体键的值
+        localD = {}                                #只包含空集合的根节点
+        for item in transSet:                      #对于每一个元素项如'h'...
+            if item in freqItemSet:                #只对频繁项集进行降序排序
+                localD[item] = headerTable[item][0]      #此时的headerTable[item][0]为键名加出现次数,[1]为指针
+            # 使用排序后的频率项集对树进行填充
+        if len(localD) > 0:
+            orderedItems = [v[0] for v in sorted(localD.items(),key=lambda p:p[1],reverse=True)]
+            #p:p[1]是安装p中的第二个数进行降序排列,即按照出现元素项次数排列
+            #localD.item把localD分为[(键名,次数)...]
+            updateTree(orderedItems, retTree, headerTable, count)
+    return retTree, headerTable                        #返回树列表和头指针
+
+
+
+def updateTree(items, inTree, headerTable, count):
+    """
+
+    :param items:降序排列的键名+指针
+    :param inTree:初始化的tree
+    :param headerTable:头指针列表
+    :param count: 计数
+    :return:
+            无
+    """
+    if items[0] in inTree.children:                             #测试事务中的第一个元素项是否作为子节点存在
+                                                                #存在的话就增加计数
+        inTree.children[items[0]].inc(count)
+    else:                                                       #不存在就把他作为一个子节点添加到树中
+        inTree.children[items[0]] = treeNode(items[0], count, inTree)
+        if headerTable[items[0]][1] == None:                    #头指针更新,指向新的节点
+            headerTable[items[0]][1] = inTree.children[items[0]]
+        else:                                                   #更新指向
+            updateHeader(headerTable[items[0]][1], inTree.children[items[0]])
+    if len(items) > 1:                                          #迭代,每次迭代会去掉列表中的第一个元素
+        updateTree(items[1::], inTree.children[items[0]], headerTable, count)
+
+
+def updateHeader(nodeToSet, targetNode):
+    """
+    确保节点链接指向树中该元素项的每一个实例
+    从头指针表的 nodeLink 开始,一直沿着nodeLink直到到达链表末尾
+    获取头指针表中该元素项对应的单链表的尾节点，然后将其指向新节点targe
+    :param nodeToSet:
+    :param targetNode:
+    :return:
+    """
+    while (nodeToSet.nodeLink != None):
+        nodeToSet = nodeToSet.nodeLink
+    nodeToSet.nodeLink = targetNode
+
+
+
+def ascendTree(leafNode, prefixPath):
+    """
+    将当前节点leafNode添加到prefixPath的末尾，然后递归添加其父节点。最终结果,
+    prefixPath就是一条从treeNode（包括treeNode）到根节点（不包括根节点）的路径。
+    在主函数findPrefixPath()中再取prefixPath[1:]，即为treeNode的前缀路径。
+    :param leafNode: 叶节点
+    :param prefixPath: 前缀路径
+    :return:
+    """
+    if leafNode.parent != None:                                 #迭代上溯整棵树
+        prefixPath.append(leafNode.name)
+        ascendTree(leafNode.parent, prefixPath)
+
+
+def findPrefixPath(basePat, treeNode):
+    """
+    寻找前缀路径
+    为给定元素项生成一个条件模式基(前缀路径),这通过访问树中所有包含给定元素项的节点来完成
+    :param basePat: 参数basePet表示输入的频繁项
+    :param treeNode: treeNode为当前FP树中对应的第一个节点
+    (可在函数外部通过headerTable[basePat][1]获取)
+    :return:
+            condPats-条件模式基-键为前缀路径，值为计数值。
+
+    """
+    condPats = {}                                               #条件模式基字典
+    while treeNode != None:
+        prefixPath = []
+        ascendTree(treeNode, prefixPath)                        #寻找当前非空节点的前缀
+        if len(prefixPath) > 1:
+            condPats[frozenset(prefixPath[1:])] = treeNode.count      #增加计数
+        treeNode = treeNode.nodeLink                            #更新指针
+    return condPats
+
+
+
+def mineTree(inTree, headerTable, minSup, preFix, freqItemList):
+    """
+
+    :param inTree: inTree和headerTable是由createTree()函数生成的数据集的FP树
+    :param headerTable:
+    :param minSup: 最小支持度
+    :param preFix: preFix传入一个空集合（set([])），将在函数中用于保存当前前缀
+    :param freqItemList:freqItemList传入一个空列表（[]），将用来储存生成的频繁项集
+    :return:
+    """
+    bigL = [v[0] for v in sorted(headerTable.items(), key=lambda p:str(p[1]))]   #这点要修改,python3中int不能和str相比较
+    #头指针表中的元素项按照频繁度,默认从小到大排列
+    for basePat in bigL:                  #从底层开始
+                            #加入频繁项列表
+        newFreqSet = preFix.copy()
+        newFreqSet.add(basePat)
+        #print ('finalFrequent Item: ',newFreqSet)
+        freqItemList.append(newFreqSet)
+        #递归调用函数来创建基
+        condPattBases = findPrefixPath(basePat, headerTable[basePat][1])
+        #print('condPattBases :', basePat, condPattBases)
+
+
+        #构建条件数Tree
+        myCondTree, myHead = createTree(condPattBases, minSup)
+        #print('head from conditional tree: ', myHead)
+
+        if myHead != None:                                   #如果树中还有元素项的话，就递归调用mineTree
+            print('conditional tree for: ', newFreqSet)
+            myCondTree.disp()
+            mineTree(myCondTree, myHead, minSup, newFreqSet, freqItemList)
