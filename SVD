@@ -1,0 +1,169 @@
+from numpy import *
+from numpy import linalg as la
+
+
+def loadExData():
+    return [[1,1,1,0,0],
+             [2,2,2,0,0],
+             [1,1,1,0,0],
+             [5,5,5,0,0],
+             [1,1,0,2,2],
+             [0,0,0,3,3],
+             [0,0,0,1,1]]
+
+
+def loadExData2():
+    return [[2,0,0,4,4,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,5],
+            [0,0,0,0,0,0,0,1,0,4,0],
+            [3,3,4,0,3,0,0,2,2,0,0],
+            [5,5,5,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,5,0,0,5,0],
+            [4,0,4,0,0,0,0,0,0,0,5],
+            [0,0,0,0,0,4,0,0,0,0,4],
+            [0,0,0,0,0,0,5,0,0,5,0],
+            [0,0,0,3,0,0,0,0,4,5,0],
+            [1,1,2,1,1,2,1,0,4,5,0]]
+
+
+#相似度精确计算的三种方法
+def eculidSim(inA, inB):
+    #欧氏距离
+    return 1.0 / (1.0 + la.norm(inA - inB))          #计算范数la.norm
+
+def pearsSim(inA, inB):
+    #皮尔逊相关系数
+    if len(inA) < 3 : return 1.0
+    return 1.0 / (1.0 + la.norm(inA- inB))
+
+def cosSim(inA, inB):
+    #余弦相关系数
+    num =float(inA.T * inB)
+    denom = la.norm(inA) * la.norm(inB)
+    return 0.5 + 0.5*(num / denom)
+
+
+
+def standEst(dataMat, user, simMeas, item):
+    """
+    估计评分值
+    在给定相似度计算方法(cosSim)的条件下,用户对物品的估计评分值
+    :param dataMat: 数据矩阵
+    :param user: 用户编号
+    :param simMeas: 相似度计算方法
+    :param item: 物品编号
+    :return:
+    """
+    n = shape(dataMat)[1]                                          #获取物品的数目
+    #这里行对应用户,列对应物品
+    simTotal = 0.0; ratSimTotal = 0.0                              #对用于计算估计评分值的变量进行初始化
+    for j in range(n):                                             #遍历所有物品
+        userRating = dataMat[user, j]                              #用户对j物品的评分
+        if userRating == 0: continue                               #如果评分为0,则跳过该物品
+        overLap = nonzero(logical_and(dataMat[:,item].A>0, dataMat[:,j].A>0))[0]
+        #logica_and逻辑与,寻找两个用户都评分的物品
+        if len(overLap) == 0:
+            similarity = 0                      #如果两者没有重合元素,相似度为0
+        else: similarity = simMeas(dataMat[overLap,item], dataMat[overLap,j])      #基于重合的物品计算相似度
+        #print('the %d and %d similarity is: %f'%(item, j, similarity))
+        simTotal += similarity
+        ratSimTotal += similarity * userRating
+    if simTotal == 0:
+        return 0
+    else:
+        return ratSimTotal / simTotal                             #对相似度评分的乘积进行归一化,使评分值在0-5
+
+
+
+def recommend(dataMat, user, N=3, simMeas=cosSim, estMethod=standEst):
+    """
+    返回相似度最高的N(默认为3)个物品
+    :param dataMat: 数据矩阵
+    :param user: 用户编号
+    :param N: 推荐结果个数
+    :param simMeas: 相似度计算方法
+    :param estMethod: 相似度估计方法
+    :return:
+
+    """
+    unratedItems = nonzero(dataMat[user,:].A == 0)[1]                       #创建为评分的物品列表
+    if len(unratedItems)  == 0: return ('you rated everything')               #如果不存在未评分物品,退出函数
+    itemScores = []                                                         #存储物品编号和估计的分值
+    for item in unratedItems:                                               #对未评分物品进行循环
+        estimatedScore = estMethod(dataMat, user, simMeas, item)            #计算估计评分值
+        itemScores.append((item, estimatedScore))
+    return  sorted(itemScores, key=lambda jj: jj[1], reverse=True)[:N]
+    #按照估计得分值从大到小排序,返回前N个相似度最高的物品
+
+
+
+def svdEst(dataMat, user, simMeas, item):
+    """
+    用SVD降维后的估计评分值
+    :param dataMat: 数据矩阵
+    :param user: 用户编号
+    :param simMeas: 相似度计算方法
+    :param item: 用户未评分物品编号
+    :return:
+
+    """
+    n = shape(dataMat)[1]                                             #物品数量
+    simTotal = 0.0; ratSimTotal = 0.0                                 #初始化
+    U,Sigma,VT = la.svd(dataMat)                                      #用svd计算
+    Sigma6 = mat(eye(6)*Sigma[:6])                                    #降成5维的空间,5维时能量大于90%
+    xformedItems = dataMat.T * U[:,:6] * Sigma6.I                     #5维空间的新数据,相当于只保留五个特征
+    #.I为inverse逆,sigma为正交矩阵,矩阵的逆等于矩阵的转置
+    for j in range(n):                                                #遍历物品
+        userRating = dataMat[user,j]                                  #用户对当前物品的评分
+        if userRating == 0 or j == item:continue                      #当评分为0或者循环次数为未评分编号时,跳过该物品
+        similarity = simMeas(xformedItems[item,:].T, xformedItems[j,:].T)       #计算相似度
+        print('the %d and %d similarity is: %f' % (item, j, similarity))
+        simTotal += similarity
+        ratSimTotal += similarity * userRating
+    if simTotal == 0: return 0
+    else:
+        return ratSimTotal / simTotal
+
+
+def printMat(inMat, thresh=0.8):
+    """
+    打印矩阵,由于矩阵包括了浮点数,因此必须定义深色和浅色
+    通过阈值来界定
+    :param inMat:
+    :param thresh:
+    :return:
+    """
+    #遍历矩阵
+    for i in range(32):                                     #大于阈值时,打印1,小于打印0
+        for k in range(32):
+            if float(inMat[i,k]) > thresh:
+                print (1)
+            else: print (0)
+        print ('')
+
+
+def imgCompress(numSV=3, thresh=0.8):
+    """
+    压缩矩阵,基于任意给定的奇异值来重构图形
+    :param numSV: 奇异值
+    :param thresh: 阈值
+    :return:
+    """
+    myl = []
+    path = r"F:\ML in action-dataSet\ML-in-Action-Code-and-Note-master\ch14\0_5.txt"
+    for line in open(path).readlines():
+        newRow = []
+        for i in range(32):
+            newRow.append(int(line[i]))
+        myl.append(newRow)
+    myMat = mat(myl)
+    print('*****original matrix*****')
+    printMat(myMat, thresh)                                  #打印原始矩阵
+    U,Sigma,VT = la.svd(myMat)                               #分解图形
+    SigRecon = mat(zeros((numSV, numSV)))                    #全0矩阵
+    for k in range(numSV):
+        SigRecon[k,k] = Sigma[k]                             #构建对角矩阵,元素为奇异值
+    reconMat = U[:,:numSV] * SigRecon * VT[:numSV,:]         #重构矩阵
+    print('*****reconstructed matrix using %d singular values*****' % numSV)
+    printMat(reconMat, thresh)
+
